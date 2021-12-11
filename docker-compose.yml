@@ -1,0 +1,11 @@
+version: "3"
+services:
+  httpd:
+    image: httpd:2-alpine
+    ports:
+      - "80:80"
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"

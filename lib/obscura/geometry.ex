@@ -1,8 +1,12 @@
+defmodule Obscura.Geometry do
+  @spec lerp(number, number, number) :: number
+  def lerp(t, a, b), do: a * (1 - t) + b * t
+end
+
 defmodule Obscura.Vector2 do
   defstruct [:x, :y]
 
-  alias Obscura.Point2
-  alias Obscura.Vector2
+  alias Obscura.{Point2, Vector2}
 
   @type t :: %__MODULE__{x: number, y: number}
 
@@ -43,60 +47,10 @@ defmodule Obscura.Vector2 do
   def to_point2(v), do: Point2.new(v.x, v.y)
 end
 
-defmodule Obscura.Point2 do
-  defstruct [:x, :y]
-
-  alias Obscura.Point2
-  alias Obscura.Vector2
-
-  @type t :: %__MODULE__{x: number, y: number}
-
-  @spec abs(Obscura.Point2.t()) :: Obscura.Point2.t()
-  def abs(p), do: Point2.new(Kernel.abs(p.x), Kernel.abs(p.y))
-
-  @spec add(Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
-  def add(p1, %Point2{} = p2), do: Point2.new(p1.x + p2.x, p1.y + p2.y)
-
-  @spec add(Obscura.Point2.t(), Obscura.Vector2.t()) :: Obscura.Point2.t()
-  def add(p, %Vector2{} = v), do: Point2.new(p.x + v.x, p.y + v.y)
-
-  @spec distance(Obscura.Point2.t(), Obscura.Point2.t()) :: number
-  def distance(p1, p2), do: sub(p1, p2) |> Vector2.length()
-
-  @spec div(Obscura.Point2.t(), number) :: Obscura.Point2.t()
-  def div(p, s), do: Point2.mul(p, 1 / s)
-
-  @spec lerp(number, Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
-  def lerp(t, p1, p2), do: add(mul(p1, 1 - t), mul(p2, t))
-
-  @spec mul(Obscura.Point2.t(), number) :: Obscura.Point2.t()
-  def mul(p, s), do: Point2.new(p.x * s, p.y * s)
-
-  @spec new :: Obscura.Point2.t()
-  def new, do: new(0, 0)
-
-  @spec new(number, number) :: Obscura.Point2.t()
-  def new(x, y), do: %__MODULE__{x: x, y: y}
-
-  @spec sub(Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Vector2.t()
-  def sub(p1, %Point2{} = p2), do: Vector2.new(p1.x - p2.x, p1.y - p2.y)
-
-  @spec sub(Obscura.Point2.t(), Obscura.Vector2.t()) :: Obscura.Point2.t()
-  def sub(p, %Vector2{} = v), do: Point2.new(p.x - v.x, p.y - v.y)
-
-  @spec to_list(Obscura.Point2.t()) :: [...]
-  def to_list(p), do: [p.x, p.y]
-
-  @spec to_vector2(Obscura.Point2.t()) :: Obscura.Vector2.t()
-  def to_vector2(p), do: Vector2.new(p.x, p.y)
-end
-
 defmodule Obscura.Vector3 do
   defstruct [:x, :y, :z]
 
-  alias Obscura.Normal3
-  alias Obscura.Point3
-  alias Obscura.Vector3
+  alias Obscura.{Normal3, Point3, Vector3}
 
   @type t :: %__MODULE__{x: number, y: number, z: number}
 
@@ -147,11 +101,57 @@ defmodule Obscura.Vector3 do
   def to_list(v), do: [v.x, v.y, v.z]
 end
 
+defmodule Obscura.Point2 do
+  defstruct [:x, :y]
+
+  alias Obscura.{Point2, Vector2}
+
+  @type t :: %__MODULE__{x: number, y: number}
+
+  @spec abs(Obscura.Point2.t()) :: Obscura.Point2.t()
+  def abs(p), do: Point2.new(Kernel.abs(p.x), Kernel.abs(p.y))
+
+  @spec add(Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
+  def add(p1, %Point2{} = p2), do: Point2.new(p1.x + p2.x, p1.y + p2.y)
+
+  @spec add(Obscura.Point2.t(), Obscura.Vector2.t()) :: Obscura.Point2.t()
+  def add(p, %Vector2{} = v), do: Point2.new(p.x + v.x, p.y + v.y)
+
+  @spec distance(Obscura.Point2.t(), Obscura.Point2.t()) :: number
+  def distance(p1, p2), do: sub(p1, p2) |> Vector2.length()
+
+  @spec div(Obscura.Point2.t(), number) :: Obscura.Point2.t()
+  def div(p, s), do: Point2.mul(p, 1 / s)
+
+  @spec lerp(number, Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
+  def lerp(t, p1, p2), do: add(mul(p1, 1 - t), mul(p2, t))
+
+  @spec mul(Obscura.Point2.t(), number) :: Obscura.Point2.t()
+  def mul(p, s), do: Point2.new(p.x * s, p.y * s)
+
+  @spec new :: Obscura.Point2.t()
+  def new, do: new(0, 0)
+
+  @spec new(number, number) :: Obscura.Point2.t()
+  def new(x, y), do: %__MODULE__{x: x, y: y}
+
+  @spec sub(Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Vector2.t()
+  def sub(p1, %Point2{} = p2), do: Vector2.new(p1.x - p2.x, p1.y - p2.y)
+
+  @spec sub(Obscura.Point2.t(), Obscura.Vector2.t()) :: Obscura.Point2.t()
+  def sub(p, %Vector2{} = v), do: Point2.new(p.x - v.x, p.y - v.y)
+
+  @spec to_list(Obscura.Point2.t()) :: [...]
+  def to_list(p), do: [p.x, p.y]
+
+  @spec to_vector2(Obscura.Point2.t()) :: Obscura.Vector2.t()
+  def to_vector2(p), do: Vector2.new(p.x, p.y)
+end
+
 defmodule Obscura.Point3 do
   defstruct [:x, :y, :z]
 
-  alias Obscura.Point3
-  alias Obscura.Vector3
+  alias Obscura.{Point3, Vector3}
 
   @type t :: %__MODULE__{x: number, y: number, z: number}
 
@@ -198,8 +198,7 @@ end
 defmodule Obscura.Normal3 do
   defstruct [:x, :y, :z]
 
-  alias Obscura.Normal3
-  alias Obscura.Vector3
+  alias Obscura.{Normal3, Vector3}
 
   @type t :: %__MODULE__{x: number, y: number, z: number}
 
@@ -254,10 +253,7 @@ end
 defmodule Obscura.RayDifferential do
   defstruct [:r, :rx, :ry]
 
-  alias Obscura.Point3
-  alias Obscura.Ray
-  alias Obscura.RayDifferential
-  alias Obscura.Vector3
+  alias Obscura.{Point3, Ray, RayDifferential, Vector3}
 
   @type t :: %__MODULE__{r: Obscura.Ray.t(), rx: Obscura.Ray.t(), ry: Obscura.Ray.t()}
 
@@ -281,9 +277,34 @@ end
 defmodule Obscura.Bounds2 do
   defstruct [:min, :max]
 
-  alias Obscura.Point2
+  alias Obscura.{Geometry, Point2, Vector2}
 
   @type t :: %__MODULE__{min: Obscura.Point2.t(), max: Obscura.Point2.t()}
+
+  @spec area(Obscura.Bounds2.t()) :: number
+  def area(b) do
+    d = diagonal(b)
+
+    d.x * d.y
+  end
+
+  @spec diagonal(Obscura.Bounds2.t()) :: Obscura.Vector2.t()
+  def diagonal(b), do: Point2.sub(b.max, b.min)
+
+  @spec lerp(Obscura.Bounds2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
+  def lerp(b, t) do
+    Point2.new(
+      Geometry.lerp(t.x, b.min.x, b.max.x),
+      Geometry.lerp(t.y, b.min.y, b.max.y)
+    )
+  end
+
+  @spec maximum_extent(Obscura.Bounds2.t()) :: 0 | 1
+  def maximum_extent(b) do
+    d = diagonal(b)
+
+    if d.x > d.y, do: 0, else: 1
+  end
 
   @spec new(Obscura.Point2.t(), Obscura.Point2.t()) :: Obscura.Bounds2.t()
   def new(p1, p2) do
@@ -291,5 +312,175 @@ defmodule Obscura.Bounds2 do
     max = Point2.new(Kernel.max(p1.x, p2.x), Kernel.max(p1.y, p2.y))
 
     %__MODULE__{min: min, max: max}
+  end
+
+  @spec offset(Obscura.Bounds2.t(), Obscura.Point2.t()) :: Obscura.Vector2.t()
+  def offset(b, p) do
+    o = Point2.sub(p, b.min)
+
+    x = if b.max.x > b.min.x, do: o.x / (b.max.x - b.min.x), else: o.x
+    y = if b.max.y > b.min.y, do: o.y / (b.max.y - b.min.y), else: o.y
+
+    Vector2.new(x, y)
+  end
+end
+
+defmodule Obscura.Bounds3 do
+  defstruct [:min, :max]
+
+  use Bitwise
+
+  alias Obscura.{Bounds3, Geometry, Point3, Vector3}
+
+  @type t :: %__MODULE__{min: Obscura.Point3.t(), max: Obscura.Point3.t()}
+
+  @spec new(Obscura.Point3.t(), Obscura.Point3.t()) :: Obscura.Bounds3.t()
+  def new(p1, p2) do
+    min = Point3.new(Kernel.min(p1.x, p2.x), Kernel.min(p1.y, p2.y), Kernel.min(p1.z, p2.z))
+    max = Point3.new(Kernel.max(p1.x, p2.x), Kernel.max(p1.y, p2.y), Kernel.min(p1.z, p2.z))
+
+    %__MODULE__{min: min, max: max}
+  end
+
+  @spec corner(Obscura.Bounds3.t(), integer) :: Obscura.Point3.t()
+  def corner(b, i) do
+    x = if((i &&& 1) == 0, do: b.min.x, else: b.max.x)
+    y = if((i &&& 2) == 0, do: b.min.y, else: b.max.y)
+    z = if((i &&& 4) == 0, do: b.min.z, else: b.max.z)
+
+    Point3.new(x, y, z)
+  end
+
+  @spec union(Obscura.Bounds3.t(), Obscura.Point3.t()) :: Obscura.Bounds3.t()
+  def union(b, %Obscura.Point3{} = p) do
+    min = Point3.new(Kernel.min(b.min.x, p.x), Kernel.min(b.min.y, p.y), Kernel.min(b.min.z, p.z))
+    max = Point3.new(Kernel.max(b.max.x, p.x), Kernel.max(b.max.y, p.y), Kernel.max(b.max.z, p.z))
+
+    Bounds3.new(min, max)
+  end
+
+  @spec union(Obscura.Bounds3.t(), Obscura.Bounds3.t()) :: Obscura.Bounds3.t()
+  def union(b1, %Obscura.Bounds3{} = b2) do
+    min =
+      Point3.new(
+        Kernel.min(b1.min.x, b2.min.x),
+        Kernel.min(b1.min.y, b2.min.y),
+        Kernel.min(b1.min.z, b2.min.z)
+      )
+
+    max =
+      Point3.new(
+        Kernel.max(b1.max.x, b2.max.x),
+        Kernel.max(b1.max.y, b2.max.y),
+        Kernel.max(b1.max.z, b2.max.z)
+      )
+
+    Bounds3.new(min, max)
+  end
+
+  @spec intersect(Obscura.Bounds3.t(), Obscura.Bounds3.t()) :: Obscura.Bounds3.t()
+  def intersect(b1, b2) do
+    min =
+      Point3.new(
+        Kernel.max(b1.min.x, b2.min.x),
+        Kernel.max(b1.min.y, b2.min.y),
+        Kernel.max(b1.min.z, b2.min.z)
+      )
+
+    max =
+      Point3.new(
+        Kernel.min(b1.max.x, b2.max.x),
+        Kernel.min(b1.max.y, b2.max.y),
+        Kernel.min(b1.max.z, b2.max.z)
+      )
+
+    Bounds3.new(min, max)
+  end
+
+  @spec overlaps(Obscura.Bounds3.t(), Obscura.Bounds3.t()) :: boolean
+  def overlaps(b1, b2) do
+    x = b1.max.x >= b2.min.x && b1.min.x <= b2.max.x
+    y = b1.max.y >= b2.min.y && b1.min.y <= b2.max.y
+    z = b1.max.z >= b2.min.z && b1.min.z <= b2.max.z
+
+    x && y && z
+  end
+
+  @spec inside(Obscura.Bounds3.t(), Obscura.Point3.t()) :: boolean
+  def inside(b, p) do
+    p.x >= b.min.x && p.x <= b.max.x &&
+      p.y >= b.min.y && p.y <= b.max.y &&
+      p.z >= b.min.z && p.z <= b.max.z
+  end
+
+  @spec inside_exclusive(Obscura.Bounds3.t(), Obscura.Point3.t()) :: boolean
+  def inside_exclusive(b, p) do
+    p.x >= b.min.x && p.x < b.max.x &&
+      p.y >= b.min.y && p.y < b.max.y &&
+      p.z >= b.min.z && p.z < b.max.z
+  end
+
+  @spec expand(Obscura.Bounds3.t(), number) :: Obscura.Bounds3.t()
+  def expand(b, delta) do
+    min = Point3.sub(b.min, Vector3.new(delta, delta, delta))
+    max = Point3.add(b.max, Vector3.new(delta, delta, delta))
+
+    Bounds3.new(min, max)
+  end
+
+  @spec diagonal(Obscura.Bounds3.t()) :: Obscura.Vector3.t()
+  def diagonal(b), do: Point3.sub(b.max, b.min)
+
+  @spec surface_area(Obscura.Bounds3.t()) :: number
+  def surface_area(b) do
+    d = diagonal(b)
+
+    2 * (d.x * d.y + d.x * d.z + d.y * d.z)
+  end
+
+  @spec volume(Obscura.Bounds3.t()) :: number
+  def volume(b) do
+    d = diagonal(b)
+
+    d.x * d.y * d.z
+  end
+
+  @spec maximum_extent(Obscura.Bounds3.t()) :: 0 | 1 | 2
+  def maximum_extent(b) do
+    d = diagonal(b)
+
+    cond do
+      d.x > d.y && d.x > d.z -> 0
+      d.y > d.z -> 1
+      true -> 2
+    end
+  end
+
+  @spec lerp(Obscura.Bounds3.t(), Obscura.Point3.t()) :: Obscura.Point3.t()
+  def lerp(b, t) do
+    Point3.new(
+      Geometry.lerp(t.x, b.min.x, b.max.x),
+      Geometry.lerp(t.y, b.min.y, b.max.y),
+      Geometry.lerp(t.z, b.min.z, b.max.z)
+    )
+  end
+
+  @spec offset(Obscura.Bounds3.t(), Obscura.Point3.t()) :: Obscura.Vector3.t()
+  def offset(b, p) do
+    o = Point3.sub(p, b.min)
+
+    x = if b.max.x > b.min.x, do: o.x / (b.max.x - b.min.x), else: o.x
+    y = if b.max.y > b.min.y, do: o.y / (b.max.y - b.min.y), else: o.y
+    z = if b.max.z > b.min.z, do: o.z / (b.max.z - b.min.z), else: o.z
+
+    Vector3.new(x, y, z)
+  end
+
+  @spec bounding_sphere(Obscura.Bounds3.t()) :: {Obscura.Point3.t(), number}
+  def bounding_sphere(b) do
+    center = Point3.add(b.min, b.max) |> Point3.div(2)
+    radius = if inside(b, center), do: Point3.distance(center, b.max), else: 0
+
+    {center, radius}
   end
 end
