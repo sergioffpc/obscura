@@ -1,8 +1,3 @@
-defmodule Obscura.Geometry do
-  @spec lerp(number, number, number) :: number
-  def lerp(t, a, b), do: a * (1 - t) + b * t
-end
-
 defmodule Obscura.Vector2 do
   defstruct [:x, :y]
 
@@ -277,7 +272,7 @@ end
 defmodule Obscura.Bounds2 do
   defstruct [:min, :max]
 
-  alias Obscura.{Geometry, Point2, Vector2}
+  alias Obscura.{Point2, Vector2}
 
   @type t :: %__MODULE__{min: Obscura.Point2.t(), max: Obscura.Point2.t()}
 
@@ -294,8 +289,8 @@ defmodule Obscura.Bounds2 do
   @spec lerp(Obscura.Bounds2.t(), Obscura.Point2.t()) :: Obscura.Point2.t()
   def lerp(b, t) do
     Point2.new(
-      Geometry.lerp(t.x, b.min.x, b.max.x),
-      Geometry.lerp(t.y, b.min.y, b.max.y)
+      b.min.x * (1 - t.x) + b.max.x * t.x,
+      b.min.y * (1 - t.y) + b.max.y * t.y
     )
   end
 
@@ -330,7 +325,7 @@ defmodule Obscura.Bounds3 do
 
   use Bitwise
 
-  alias Obscura.{Bounds3, Geometry, Point3, Vector3}
+  alias Obscura.{Bounds3, Point3, Vector3}
 
   @type t :: %__MODULE__{min: Obscura.Point3.t(), max: Obscura.Point3.t()}
 
@@ -459,9 +454,9 @@ defmodule Obscura.Bounds3 do
   @spec lerp(Obscura.Bounds3.t(), Obscura.Point3.t()) :: Obscura.Point3.t()
   def lerp(b, t) do
     Point3.new(
-      Geometry.lerp(t.x, b.min.x, b.max.x),
-      Geometry.lerp(t.y, b.min.y, b.max.y),
-      Geometry.lerp(t.z, b.min.z, b.max.z)
+      b.min.x * (1 - t.x) + b.max.x * t.x,
+      b.min.y * (1 - t.y) + b.max.y * t.y,
+      b.min.z * (1 - t.z) + b.max.z * t.z
     )
   end
 

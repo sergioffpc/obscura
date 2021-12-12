@@ -1,6 +1,4 @@
 defmodule Obscura.Scene do
-  defstruct [:camera]
-
-  def parse!(_path) do
+  def parse!(_uri) do
   end
 end
