@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "xlib.h": "c",
+        "erl_nif.h": "c",
+        "types.h": "c"
+    }
+}
