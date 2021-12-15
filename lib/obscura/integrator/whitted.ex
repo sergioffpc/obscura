@@ -1,10 +1,10 @@
 defmodule Obscura.Integrator.Whitted do
-  defstruct [:scene, :step]
+  defstruct [:scene, :tile]
 
   def new(scene, options \\ []) do
-    step = Keyword.get(options, :step, 64)
+    tile = Keyword.get(options, :tile, 64)
 
-    %__MODULE__{scene: scene, step: step}
+    %__MODULE__{scene: scene, tile: tile}
   end
 
   def radiance(_integrator, _xy) do
@@ -13,6 +13,8 @@ defmodule Obscura.Integrator.Whitted do
 end
 
 defimpl Obscura.Integrator, for: Obscura.Integrator.Whitted do
+  import Obscura.Kernel
+
   alias Obscura.Integrator.Whitted
 
   def join(_integrator, pixels) do
@@ -29,12 +31,12 @@ defimpl Obscura.Integrator, for: Obscura.Integrator.Whitted do
 
   def split(integrator) do
     resolution = Obscura.Point2.new(1920, 1080)
-    step = integrator.step
+    step = integrator.tile
 
     for y <- Range.new(0, resolution.y - 1, step),
         x <- Range.new(0, resolution.x - 1, step),
         into: [] do
-      [x, y, x + step, y + step]
+      [x, y, clamp(x + step, 0, resolution.x - 1), clamp(y + step, 0, resolution.y - 1)]
     end
   end
 end
