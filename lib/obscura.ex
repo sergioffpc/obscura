@@ -1,19 +1,23 @@
-defmodule Obscura.TaskEmitter do
-  def emit(uri, options \\ []) do
+defmodule Obscura do
+  def render(uri, options \\ []) do
     broker = Keyword.get(options, :broker, "amqp://guest:guest@localhost")
 
     scene = Obscura.Scene.parse!(uri)
+    Obscura.Window.start_link([1920, 1080])
+
     integrator = Obscura.Integrator.Whitted.new(scene, options)
+    Obscura.Integrator.Consumer.start_link([integrator, broker])
+
     Obscura.Integrator.Dispatcher.dispatch(integrator, broker)
   end
 end
 
-defmodule Obscura.TaskReceiver do
-  def receive(uri, options \\ []) do
+defmodule Obscura.Worker do
+  def start(uri, options \\ []) do
     broker = Keyword.get(options, :broker, "amqp://guest:guest@localhost")
 
     scene = Obscura.Scene.parse!(uri)
     integrator = Obscura.Integrator.Whitted.new(scene)
-    Obscura.Integrator.Consumer.consume(integrator, broker)
+    Obscura.Integrator.Consumer.start_link([integrator, broker])
   end
 end

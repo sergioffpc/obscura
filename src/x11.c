@@ -14,6 +14,7 @@
 
 static Display         *display;
 static Window           window;
+static GC				context;
 static XImage          *image;
 static XShmSegmentInfo *shm_info;
 
@@ -88,6 +89,12 @@ static ERL_NIF_TERM x11_window_create_nif(ErlNifEnv *env, int argc, const ERL_NI
 	XSync(display, False);
 	shmctl(shm_info->shmid, IPC_RMID, 0);
 
+	XGCValues gc_values = {
+		.graphics_exposures = False,
+	};
+
+	context = XCreateGC(display, window, GCGraphicsExposures, &gc_values);
+
     return enif_make_int(env, window);
 }
 
@@ -120,21 +127,19 @@ static ERL_NIF_TERM x11_window_put_pixel_nif(ErlNifEnv *env, int argc, const ERL
 	    return enif_make_badarg(env);
     }
 
-    int ret;
-    ret = XPutPixel((XImage *) image, x, y, rgb);
+	int ret = -1;
+
+	XWindowAttributes window_attrs;
+	XGetWindowAttributes(display, window, &window_attrs);
+	if (x < window_attrs.width && y < window_attrs.height) {
+    	ret = XPutPixel((XImage *) image, x, y, rgb);
+	}
 
     return enif_make_int(env, ret);
 }
 
 static ERL_NIF_TERM x11_window_put_image_nif(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
     int ret;
-
-	XGCValues gc_values = {
-		.graphics_exposures = False,
-	};
-
-	GC context = 0;
-	context = XCreateGC(display, window, GCGraphicsExposures, &gc_values);
 
 	XWindowAttributes window_attrs;
 	XGetWindowAttributes(display, window, &window_attrs);

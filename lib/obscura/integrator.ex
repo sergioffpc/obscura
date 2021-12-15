@@ -9,76 +9,88 @@ end
 defmodule Obscura.Integrator.Dispatcher do
   alias Obscura.Integrator
 
+  @queue "obscura.rendering.queue"
+
   def dispatch(integrator, broker) do
     {:ok, connection} = AMQP.Connection.open(broker)
     {:ok, channel} = AMQP.Channel.open(connection)
-
-    {:ok, %{message_count: 0}} = AMQP.Queue.declare(channel, "obscura.rendering.queue")
-    {:ok, %{queue: reply_to}} = AMQP.Queue.declare(channel)
+    {:ok, %{}} = AMQP.Queue.declare(channel, @queue, auto_delete: true)
+    {:ok, %{queue: reply_to}} = AMQP.Queue.declare(channel, "", auto_delete: true)
+    AMQP.Basic.consume(channel, reply_to, self())
 
     for bounds <- Integrator.split(integrator) do
       Task.async(fn ->
-        AMQP.Basic.consume(channel, reply_to, self(), no_ack: true)
-
-        pixels =
-          JSON.encode!(bounds)
-          |> basic_publish(channel, reply_to)
-          |> basic_deliver()
-          |> JSON.decode!()
-
-        Integrator.join(integrator, pixels)
+        AMQP.Basic.publish(channel, "", @queue, JSON.encode!(bounds), reply_to: reply_to)
       end)
     end
-    |> Enum.map(&Task.await(&1, :infinity))
+    |> Enum.map(fn task ->
+      Task.await(task, :infinity)
+
+      receive do
+        {:basic_deliver, payload, metadata} ->
+          Integrator.join(integrator, JSON.decode!(payload))
+          AMQP.Basic.ack(channel, metadata.delivery_tag)
+      end
+    end)
 
     AMQP.Connection.close(connection)
-  end
-
-  defp basic_deliver(correlation_id) do
-    receive do
-      {:basic_deliver, payload, %{correlation_id: ^correlation_id}} ->
-        payload
-    end
-  end
-
-  defp basic_publish(payload, channel, reply_to) do
-    correlation_id = :erlang.unique_integer() |> :erlang.integer_to_binary() |> Base.encode64()
-
-    AMQP.Basic.publish(channel, "", "obscura.rendering.queue", payload,
-      correlation_id: correlation_id,
-      reply_to: reply_to
-    )
-
-    correlation_id
   end
 end
 
 defmodule Obscura.Integrator.Consumer do
+  use GenServer
+
   alias Obscura.Integrator
 
-  def consume(integrator, broker) do
-    {:ok, connection} = AMQP.Connection.open(broker)
-    {:ok, channel} = AMQP.Channel.open(connection)
+  @queue "obscura.rendering.queue"
 
-    AMQP.Queue.declare(channel, "obscura.rendering.queue")
-    AMQP.Basic.qos(channel, prefetch_count: 1)
-    AMQP.Basic.consume(channel, "obscura.rendering.queue")
-
-    basic_deliver(channel, integrator)
+  def start_link(options) do
+    GenServer.start_link(__MODULE__, options, name: __MODULE__)
   end
 
-  defp basic_deliver(channel, integrator) do
-    receive do
-      {:basic_deliver, payload, metadata} ->
-        json = Integrator.render(integrator, JSON.decode!(payload)) |> JSON.encode!()
+  @impl true
+  def init([integrator, broker]) do
+    {:ok, connection} = AMQP.Connection.open(broker)
+    {:ok, channel} = AMQP.Channel.open(connection)
+    {:ok, %{}} = AMQP.Queue.declare(channel, @queue, auto_delete: true)
+    :ok = AMQP.Basic.qos(channel, prefetch_count: 1)
+    {:ok, _consumer_tag} = AMQP.Basic.consume(channel, @queue)
+    {:ok, %{channel: channel, integrator: integrator}}
+  end
 
-        AMQP.Basic.publish(channel, "", metadata.reply_to, "#{json}",
-          correlation_id: metadata.correlation_id
-        )
+  @impl true
+  def handle_info({:basic_consume_ok, %{}}, state) do
+    {:noreply, state}
+  end
 
-        AMQP.Basic.ack(channel, metadata.delivery_tag)
+  @impl true
+  def handle_info({:basic_cancel, %{}}, state) do
+    {:stop, :normal, state}
+  end
 
-        basic_deliver(channel, integrator)
+  @impl true
+  def handle_info({:basic_cancel_ok, %{}}, state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:basic_deliver, payload, metadata}, state) do
+    try do
+      response = Integrator.render(state.integrator, JSON.decode!(payload)) |> JSON.encode!()
+
+      AMQP.Basic.publish(state.channel, "", metadata.reply_to, "#{response}",
+        correlation_id: metadata.correlation_id
+      )
+
+      AMQP.Basic.ack(state.channel, metadata.delivery_tag)
+    rescue
+      _exception ->
+        :ok =
+          AMQP.Basic.reject(state.channel, metadata.delivery_tag,
+            requeue: not metadata.redelivered
+          )
     end
+
+    {:noreply, state}
   end
 end

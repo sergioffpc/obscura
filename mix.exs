@@ -7,7 +7,7 @@ defmodule Obscura.MixProject do
       version: "0.1.0",
       elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
-      compilers: [:elixir_make | Mix.compilers],
+      compilers: [:elixir_make | Mix.compilers()],
       deps: deps()
     ]
   end
@@ -23,7 +23,6 @@ defmodule Obscura.MixProject do
   defp deps do
     [
       {:elixir_make, "~> 0.6", runtime: false},
-
       {:amqp, "~> 3.0"},
       {:json, "~> 1.4"}
     ]
