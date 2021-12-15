@@ -16,6 +16,7 @@ defmodule Obscura.Integrator.Dispatcher do
     {:ok, channel} = AMQP.Channel.open(connection)
     {:ok, %{}} = AMQP.Queue.declare(channel, @queue, auto_delete: true)
     {:ok, %{queue: reply_to}} = AMQP.Queue.declare(channel, "", auto_delete: true)
+
     AMQP.Basic.consume(channel, reply_to, self())
 
     for bounds <- Integrator.split(integrator) do
@@ -23,9 +24,7 @@ defmodule Obscura.Integrator.Dispatcher do
         AMQP.Basic.publish(channel, "", @queue, JSON.encode!(bounds), reply_to: reply_to)
       end)
     end
-    |> Enum.map(fn task ->
-      Task.await(task, :infinity)
-
+    |> Enum.map(fn _ ->
       receive do
         {:basic_deliver, payload, metadata} ->
           Integrator.join(integrator, JSON.decode!(payload))
