@@ -42,7 +42,9 @@ impl Default for VertexAttribute {
 pub struct GeometryPass {
     pub output_bind_group_layout: Arc<wgpu::BindGroupLayout>,
     pub output_bind_group: Arc<wgpu::BindGroup>,
-    transform_buffer: wgpu::Buffer,
+    model_matrix_buffer: wgpu::Buffer,
+    view_matrix_buffer: wgpu::Buffer,
+    projection_matrix_buffer: wgpu::Buffer,
     transform_bind_group: Arc<wgpu::BindGroup>,
     render_targets: Vec<wgpu::TextureView>,
     depth_stencil_target: wgpu::TextureView,
@@ -59,11 +61,28 @@ impl GeometryPass {
         wgpu::TextureFormat::Bgra8Unorm,
     ];
     const DEPTH_STENCIL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+
     pub fn new(device: &wgpu::Device, size: wgpu::Extent3d) -> Self {
-        let transform_buffer = wgpu::util::DeviceExt::create_buffer_init(
+        let model_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
             &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry transform buffer"),
+                label: Some("geometry model matrix buffer"),
+                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+        let view_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("geometry view matrix buffer"),
+                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+        let projection_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("geometry projection matrix buffer"),
                 contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
@@ -71,25 +90,57 @@ impl GeometryPass {
         let transform_bind_group_layout = Arc::new(device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("geometry transform bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
             },
         ));
         let transform_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("geometry transform bind group"),
             layout: &transform_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: transform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: model_matrix_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: view_matrix_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: projection_matrix_buffer.as_entire_binding(),
+                },
+            ],
         }));
         let render_targets = Self::RENDER_TARGET_TEXTURE_FORMATS
             .iter()
@@ -243,7 +294,9 @@ impl GeometryPass {
         Self {
             output_bind_group_layout,
             output_bind_group,
-            transform_buffer,
+            model_matrix_buffer,
+            view_matrix_buffer,
+            projection_matrix_buffer,
             transform_bind_group,
             render_targets,
             depth_stencil_target,
@@ -255,7 +308,8 @@ impl GeometryPass {
         &self,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        view_projection_matrix: Matrix4<f32>,
+        projection_matrix: Matrix4<f32>,
+        view_matrix: Matrix4<f32>,
         geometries: Vec<(&Scene, &Matrix4<f32>)>,
     ) {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -268,7 +322,7 @@ impl GeometryPass {
                         view: target,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
                             store: true,
                         },
                     })
@@ -285,22 +339,31 @@ impl GeometryPass {
             }),
         });
         render_pass.set_pipeline(&self.pipeline);
+        queue.write_buffer(
+            &self.projection_matrix_buffer,
+            0,
+            bytemuck::cast_slice(projection_matrix.as_slice()),
+        );
+        queue.write_buffer(
+            &self.view_matrix_buffer,
+            0,
+            bytemuck::cast_slice(view_matrix.as_slice()),
+        );
         render_pass.set_bind_group(0, &self.transform_bind_group, &[]);
         geometries.iter().for_each(|(scene, transform_matrix)| {
             let mut dfs = Dfs::new(scene, petgraph::graph::node_index(0));
-            while let Some(nx) = dfs.next(scene) {
-                let node = &scene[nx];
+            while let Some(index) = dfs.next(scene) {
+                let node = &scene[index];
                 if let Some(mesh) = &node.mesh {
-                    let model_matrix = *transform_matrix
+                    let model_matrix = node.transform_matrix
                         * dfs.stack.iter().fold(Matrix4::identity(), |acc, &nx| {
                             acc * scene[nx].transform_matrix
                         })
-                        * node.transform_matrix;
-                    let transform_matrix = view_projection_matrix * model_matrix;
+                        * *transform_matrix;
                     queue.write_buffer(
-                        &self.transform_buffer,
+                        &self.model_matrix_buffer,
                         0,
-                        bytemuck::cast_slice(transform_matrix.as_slice()),
+                        bytemuck::cast_slice(model_matrix.as_slice()),
                     );
                     mesh.primitives.iter().for_each(|primitive| {
                         render_pass.set_bind_group(1, &primitive.material.material_bind_group, &[]);

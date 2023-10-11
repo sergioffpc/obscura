@@ -1,4 +1,6 @@
-@group(0) @binding(0) var<uniform> model_view_projection : mat4x4<f32>;
+@group(0) @binding(0) var<uniform> model_matrix      : mat4x4<f32>;
+@group(0) @binding(1) var<uniform> view_matrix       : mat4x4<f32>;
+@group(0) @binding(2) var<uniform> projection_matrix : mat4x4<f32>;
 
 struct vertex_output {
   @builtin(position) position : vec4<f32>,
@@ -13,8 +15,12 @@ struct vertex_output {
   @location(2) in_color_0     : vec4<f32>,
   @location(3) in_tex_coord_0 : vec2<f32>,
 ) -> vertex_output {
+  let world_position = model_matrix * vec4(in_position, 1.0);
+  let view_position = view_matrix * world_position;
+  let clip_position = projection_matrix * view_position;
+
   var output : vertex_output;
-  output.position = model_view_projection * vec4(in_position, 1.0);
+  output.position = clip_position;
   output.normal = in_normal; // convert to world coords
   output.color_0 = in_color_0;
   output.tex_coord_0 = vec2<f32>(in_tex_coord_0.x, 1.0 - in_tex_coord_0.y);

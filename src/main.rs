@@ -12,7 +12,7 @@ use clap::Parser;
 use legion::{system, world::SubWorld, IntoQuery, Resources, Schedule, World};
 use nalgebra::{Matrix4, Vector3};
 use obscura::{
-    camera::{Camera, CameraRig},
+    camera::{Projection, View},
     renderer::{present_system, Renderer},
     scene,
 };
@@ -56,12 +56,13 @@ fn main() {
         .build(&event_loop)
         .unwrap();
     let renderer = Renderer::new(&window);
-    let camera = Camera::new(window.inner_size().width, window.inner_size().height);
-    entity_world.push((camera, CameraRig::default()));
-    let scene = scene::import(&renderer.device, &renderer.queue, "res/BarramundiFish.glb");
+    let camera = Projection::new(window.inner_size().width, window.inner_size().height);
+    entity_world.push((camera, View::default()));
+    let scene = scene::import(&renderer.device, &renderer.queue, "res/BoxVertexColors.glb");
     entity_world.push((scene, Matrix4::<f32>::identity()));
     shared_resources.insert(renderer);
     let mut keyboard_keycode: Option<VirtualKeyCode> = None;
+    let mut mouse_motion: Option<(f64, f64)> = None;
     let mut last_update_time = Instant::now();
     let mut last_frame_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
@@ -91,11 +92,17 @@ fn main() {
                 },
                 _ => (),
             },
+            Event::DeviceEvent { event, .. } => match event {
+                winit::event::DeviceEvent::MouseMotion { delta } => mouse_motion = Some(delta),
+                _ => (),
+            },
             Event::MainEventsCleared => {
                 shared_resources.insert(keyboard_keycode);
+                shared_resources.insert(mouse_motion);
                 shared_resources.insert(last_update_time.elapsed());
                 entity_scheduler.execute(&mut entity_world, &mut shared_resources);
                 last_update_time = Instant::now();
+                mouse_motion = None;
 
                 render_scheduler.execute(&mut entity_world, &mut shared_resources);
             }
@@ -111,19 +118,24 @@ fn main() {
 }
 
 #[system]
-#[read_component(Camera)]
-#[write_component(CameraRig)]
-pub fn input(world: &mut SubWorld, #[resource] keyboard_keycode: &Option<VirtualKeyCode>) {
-    let (_, camera_rig) = <(&Camera, &mut CameraRig)>::query()
+#[read_component(Projection)]
+#[write_component(View)]
+pub fn input(
+    world: &mut SubWorld,
+    #[resource] keyboard_keycode: &Option<VirtualKeyCode>,
+    #[resource] mouse_motion: &Option<(f64, f64)>,
+    #[resource] delta_time: &Duration,
+) {
+    let (_, view) = <(&Projection, &mut View)>::query()
         .iter_mut(world)
         .next()
         .unwrap();
+    let step_factor = 1.0 * delta_time.as_secs_f32();
     if let Some(keyboard_keycode) = keyboard_keycode {
         if *keyboard_keycode == VirtualKeyCode::Home {
-            *camera_rig = CameraRig::default();
+            *view = View::default();
         } else {
-            let translation_factor = 0.1;
-            let translation = match *keyboard_keycode {
+            let step = match *keyboard_keycode {
                 VirtualKeyCode::Up => -Vector3::z(),
                 VirtualKeyCode::Down => Vector3::z(),
                 VirtualKeyCode::PageDown => -Vector3::y(),
@@ -131,8 +143,12 @@ pub fn input(world: &mut SubWorld, #[resource] keyboard_keycode: &Option<Virtual
                 VirtualKeyCode::Left => -Vector3::x(),
                 VirtualKeyCode::Right => Vector3::x(),
                 _ => Vector3::zeros(),
-            } * translation_factor;
-            camera_rig.position += translation;
+            } * step_factor;
+            view.position += step;
         }
+    }
+    if let Some((x, y)) = mouse_motion {
+        view.yaw += *x as f32 * step_factor;
+        view.pitch += *y as f32 * step_factor;
     }
 }

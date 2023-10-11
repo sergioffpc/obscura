@@ -324,7 +324,7 @@ impl TextureBuilder {
         );
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some("RGBA8 texture view"),
-            ..Default::default()
+            ..wgpu::TextureViewDescriptor::default()
         });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("RGBA8 sampler"),
@@ -333,7 +333,7 @@ impl TextureBuilder {
             mag_filter: self.mag_filter,
             min_filter: self.min_filter,
             mipmap_filter: self.mipmap_filter,
-            ..Default::default()
+            ..wgpu::SamplerDescriptor::default()
         });
 
         Texture {

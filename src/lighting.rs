@@ -191,7 +191,7 @@ impl LightingPass {
                 view: &self.light_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
                     store: true,
                 },
             })],

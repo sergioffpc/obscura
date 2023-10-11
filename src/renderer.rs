@@ -2,7 +2,7 @@ use legion::{system, world::SubWorld, IntoQuery};
 use nalgebra::Matrix4;
 
 use crate::{
-    camera::{Camera, CameraRig},
+    camera::{Projection, View},
     geometry::GeometryPass,
     lighting::{Light, LightingPass},
     present::PresentPass,
@@ -90,8 +90,8 @@ impl Renderer {
 }
 
 #[system]
-#[read_component(Camera)]
-#[read_component(CameraRig)]
+#[read_component(Projection)]
+#[read_component(View)]
 #[read_component(Scene)]
 #[read_component(Light)]
 #[read_component(Matrix4<f32>)]
@@ -101,14 +101,17 @@ pub fn present(world: &mut SubWorld, #[resource] renderer: &mut Renderer) {
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("renderer present command encoder"),
         });
-    let (camera, camera_rig) = <(&Camera, &CameraRig)>::query().iter(world).next().unwrap();
-    let view_projection = camera.as_matrix() * camera_rig.as_matrix();
+    let (projection, view) = <(&Projection, &View)>::query().iter(world).next().unwrap();
     let geometries = <(&Scene, &Matrix4<f32>)>::query()
         .iter(world)
         .collect::<Vec<_>>();
-    renderer
-        .geometry_pass
-        .pass(&renderer.queue, &mut encoder, view_projection, geometries);
+    renderer.geometry_pass.pass(
+        &renderer.queue,
+        &mut encoder,
+        projection.as_matrix(),
+        view.as_matrix(),
+        geometries,
+    );
     let lights = <(&Light, &Matrix4<f32>)>::query()
         .iter(world)
         .collect::<Vec<_>>();

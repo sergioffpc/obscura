@@ -1,13 +1,13 @@
-use nalgebra::{Matrix4, Perspective3, UnitQuaternion, Vector3};
+use nalgebra::{Matrix4, Perspective3, Point3, Rotation3, Translation3, Vector3};
 
-pub struct Camera {
+pub struct Projection {
     aspect: f32,
     fovy: f32,
     znear: f32,
     zfar: f32,
 }
 
-impl Camera {
+impl Projection {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
             aspect: width as f32 / height as f32,
@@ -24,17 +24,19 @@ impl Camera {
     }
 }
 
-#[derive(Default)]
-pub struct CameraRig {
-    pub position: Vector3<f32>,
-    pub orientation: UnitQuaternion<f32>,
+#[derive(Debug, Default)]
+pub struct View {
+    pub position: Point3<f32>,
+    pub yaw: f32,
+    pub pitch: f32,
 }
 
-impl CameraRig {
+impl View {
     pub fn as_matrix(&self) -> Matrix4<f32> {
-        let translation = Matrix4::new_translation(&-self.position);
-        let rotation = self.orientation.to_rotation_matrix().to_homogeneous();
+        let translation = Translation3::from(-self.position);
+        let rotation = Rotation3::from_axis_angle(&Vector3::x_axis(), self.pitch)
+            * Rotation3::from_axis_angle(&Vector3::y_axis(), self.yaw);
 
-        rotation * translation
+        rotation.to_homogeneous() * translation.to_homogeneous()
     }
 }
