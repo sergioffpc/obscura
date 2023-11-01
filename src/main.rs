@@ -10,9 +10,10 @@ use std::{
 
 use clap::Parser;
 use legion::{system, world::SubWorld, IntoQuery, Resources, Schedule, World};
-use nalgebra::{Matrix4, Vector3};
+use nalgebra::{Translation3, Vector3};
 use obscura::{
     camera::{Projection, View},
+    lighting::PointLight,
     renderer::{present_system, Renderer},
     scene,
 };
@@ -40,10 +41,12 @@ fn main() {
     env_logger::init();
     let cli = Cli::parse();
     let target_frame_time = Duration::from_secs_f64(1.0 / f64::from(cli.frame_count));
+
     let mut entity_world = World::default();
     let mut shared_resources = Resources::default();
     let mut entity_scheduler = Schedule::builder().add_system(input_system()).build();
     let mut render_scheduler = Schedule::builder().add_system(present_system()).build();
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_inner_size(LogicalSize::new(cli.width, cli.height))
@@ -56,11 +59,26 @@ fn main() {
         .build(&event_loop)
         .unwrap();
     let renderer = Renderer::new(&window);
+
     let camera = Projection::new(window.inner_size().width, window.inner_size().height);
     entity_world.push((camera, View::default()));
-    let scene = scene::import(&renderer.device, &renderer.queue, "res/BoxVertexColors.glb");
-    entity_world.push((scene, Matrix4::<f32>::identity()));
+
+    let geometry = scene::import(&renderer.device, &renderer.queue, "res/suzanne.glb");
+    entity_world.push((
+        geometry,
+        Translation3::<f32>::new(0.0, 0.0, -5.0).to_homogeneous(),
+    ));
+
+    let light = PointLight {
+        intensity: [0.1, 0.0, 0.0, 0.0],
+    };
+    entity_world.push((
+        light,
+        Translation3::<f32>::new(2.0, 2.0, 0.0).to_homogeneous(),
+    ));
+
     shared_resources.insert(renderer);
+
     let mut keyboard_keycode: Option<VirtualKeyCode> = None;
     let mut mouse_motion: Option<(f64, f64)> = None;
     let mut last_update_time = Instant::now();
@@ -92,10 +110,10 @@ fn main() {
                 },
                 _ => (),
             },
-            Event::DeviceEvent { event, .. } => match event {
-                winit::event::DeviceEvent::MouseMotion { delta } => mouse_motion = Some(delta),
-                _ => (),
-            },
+            Event::DeviceEvent {
+                event: winit::event::DeviceEvent::MouseMotion { delta },
+                ..
+            } => mouse_motion = Some(delta),
             Event::MainEventsCleared => {
                 shared_resources.insert(keyboard_keycode);
                 shared_resources.insert(mouse_motion);
@@ -130,25 +148,27 @@ pub fn input(
         .iter_mut(world)
         .next()
         .unwrap();
+
     let step_factor = 1.0 * delta_time.as_secs_f32();
     if let Some(keyboard_keycode) = keyboard_keycode {
         if *keyboard_keycode == VirtualKeyCode::Home {
             *view = View::default();
-        } else {
-            let step = match *keyboard_keycode {
-                VirtualKeyCode::Up => -Vector3::z(),
-                VirtualKeyCode::Down => Vector3::z(),
-                VirtualKeyCode::PageDown => -Vector3::y(),
-                VirtualKeyCode::PageUp => Vector3::y(),
-                VirtualKeyCode::Left => -Vector3::x(),
-                VirtualKeyCode::Right => Vector3::x(),
-                _ => Vector3::zeros(),
-            } * step_factor;
-            view.position += step;
         }
-    }
-    if let Some((x, y)) = mouse_motion {
-        view.yaw += *x as f32 * step_factor;
-        view.pitch += *y as f32 * step_factor;
+        if *keyboard_keycode == VirtualKeyCode::LControl {
+            if let Some((x, y)) = mouse_motion {
+                view.yaw += *x as f32 * step_factor * 0.01;
+                view.pitch += *y as f32 * step_factor * 0.01;
+            }
+        }
+        let step = match *keyboard_keycode {
+            VirtualKeyCode::Up => -Vector3::z(),
+            VirtualKeyCode::Down => Vector3::z(),
+            VirtualKeyCode::PageDown => -Vector3::y(),
+            VirtualKeyCode::PageUp => Vector3::y(),
+            VirtualKeyCode::Left => -Vector3::x(),
+            VirtualKeyCode::Right => Vector3::x(),
+            _ => Vector3::zeros(),
+        } * step_factor;
+        view.position += step;
     }
 }

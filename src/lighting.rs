@@ -2,43 +2,75 @@ use std::sync::Arc;
 
 use nalgebra::Matrix4;
 
-pub struct Light {
-    pub rgb: [f32; 3],
+pub struct PointLight {
+    pub intensity: [f32; 4],
 }
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct LightStorage {
-    position: [f32; 3],
-    color: [f32; 3],
+struct LightSource {
+    position: [f32; 4],
+    intensity: [f32; 4],
 }
 
 pub struct LightingPass {
-    light_bind_group_layout: Arc<wgpu::BindGroupLayout>,
-    light_target: wgpu::TextureView,
+    pub output_bind_group_layout: Arc<wgpu::BindGroupLayout>,
+    pub output_bind_group: Arc<wgpu::BindGroup>,
+
+    lights_bind_group_layout: Arc<wgpu::BindGroupLayout>,
+    render_target: wgpu::TextureView,
     vertex_buffer: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
 }
 
 impl LightingPass {
-    const LIGHT_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
+    const RENDER_TARGET_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
     const QUAD: [f32; 12] = [
         -1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
     ];
 
-    pub fn new(device: &wgpu::Device, size: wgpu::Extent3d) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        size: wgpu::Extent3d,
+        input_bind_group_layout: Arc<wgpu::BindGroupLayout>,
+    ) -> Self {
         let light_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("lighting color texture"),
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::LIGHT_TEXTURE_FORMAT,
+            format: Self::RENDER_TARGET_TEXTURE_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let light_target = light_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let light_bind_group_layout = Arc::new(device.create_bind_group_layout(
+        let light_texture_view = light_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let render_target = light_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let output_bind_group_layout = Arc::new(device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("light output bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                }],
+            },
+        ));
+        let output_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("light output bind group"),
+            layout: &output_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&light_texture_view),
+            }],
+        }));
+
+        let lights_bind_group_layout = Arc::new(device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("lighting light bind group layout"),
                 entries: &[
@@ -76,7 +108,7 @@ impl LightingPass {
         let shader = device.create_shader_module(wgpu::include_wgsl!("lighting.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lighting render pipeline layout"),
-            bind_group_layouts: &[&light_bind_group_layout],
+            bind_group_layouts: &[&input_bind_group_layout, &lights_bind_group_layout],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -114,7 +146,7 @@ impl LightingPass {
                 module: &shader,
                 entry_point: "fragment",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: Self::LIGHT_TEXTURE_FORMAT,
+                    format: Self::RENDER_TARGET_TEXTURE_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -123,8 +155,10 @@ impl LightingPass {
         });
 
         LightingPass {
-            light_bind_group_layout,
-            light_target,
+            output_bind_group_layout,
+            output_bind_group,
+            lights_bind_group_layout,
+            render_target,
             vertex_buffer,
             pipeline,
         }
@@ -133,11 +167,10 @@ impl LightingPass {
     pub fn pass(
         &self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
-        lights: Vec<(&Light, &Matrix4<f32>)>,
+        input_bind_group: Arc<wgpu::BindGroup>,
+        lights: Vec<(&PointLight, &Matrix4<f32>)>,
     ) {
-        use std::mem;
         let light_count = lights.len();
         if light_count == 0 {
             return;
@@ -151,28 +184,24 @@ impl LightingPass {
                 usage: wgpu::BufferUsages::UNIFORM,
             },
         );
-        let light_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("lighting lights buffer"),
-            size: (mem::size_of::<LightStorage>() * light_count) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: true,
-        });
         let buffer_data = lights
             .iter()
-            .map(|(light, transform_matrix)| LightStorage {
-                position: transform_matrix.column(3).xyz().into(),
-                color: light.rgb,
+            .map(|(light, transform_matrix)| LightSource {
+                position: transform_matrix.column(3).into(),
+                intensity: light.intensity,
             })
             .collect::<Vec<_>>();
-        queue.write_buffer(
-            &light_buffer,
-            0,
-            bytemuck::cast_slice(buffer_data.as_slice()),
+        let lights_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(buffer_data.as_slice()),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            },
         );
-        light_buffer.unmap();
-        let light_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("lighting light bind group"),
-            layout: &self.light_bind_group_layout,
+        let lights_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("lighting lights bind group"),
+            layout: &self.lights_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -180,7 +209,7 @@ impl LightingPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: light_buffer.as_entire_binding(),
+                    resource: lights_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -188,17 +217,18 @@ impl LightingPass {
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("lighting render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.light_target,
+                view: &self.render_target,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: true,
                 },
             })],
             depth_stencil_attachment: None,
         });
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &light_bind_group, &[]);
+        render_pass.set_bind_group(0, &input_bind_group, &[]);
+        render_pass.set_bind_group(1, &lights_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..6, 0..1);
     }

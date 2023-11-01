@@ -195,7 +195,6 @@ where
                             usage: wgpu::BufferUsages::INDEX,
                         },
                     );
-
                     let material = p.material().index().map_or_else(
                         || Arc::new(MaterialBuilder::default().build(device, queue)),
                         |index| materials[index].clone(),
@@ -228,7 +227,7 @@ where
         .default_scene()
         .unwrap()
         .nodes()
-        .flat_map(|node| inorder_traversal_edges(node))
+        .flat_map(inorder_traversal_edges)
         .collect::<Vec<_>>();
     stable_graph.extend_with_edges(edges.as_slice());
 

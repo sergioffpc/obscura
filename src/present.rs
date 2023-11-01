@@ -15,7 +15,7 @@ impl PresentPass {
         device: &wgpu::Device,
         surface: wgpu::Surface,
         config: wgpu::SurfaceConfiguration,
-        geometry_bind_group_layout: Arc<wgpu::BindGroupLayout>,
+        input_bind_group_layout: Arc<wgpu::BindGroupLayout>,
     ) -> Self {
         let vertex_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
@@ -28,7 +28,7 @@ impl PresentPass {
         let shader = device.create_shader_module(wgpu::include_wgsl!("present.wgsl"));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("present render pipeline layout"),
-            bind_group_layouts: &[&geometry_bind_group_layout],
+            bind_group_layouts: &[&input_bind_group_layout],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -85,7 +85,7 @@ impl PresentPass {
         &self,
         queue: &wgpu::Queue,
         mut encoder: wgpu::CommandEncoder,
-        geometry_bind_group: Arc<wgpu::BindGroup>,
+        input_bind_group: Arc<wgpu::BindGroup>,
     ) {
         let present_texture = self.surface.get_current_texture().unwrap();
         let present_texture_view = present_texture
@@ -105,7 +105,7 @@ impl PresentPass {
                 depth_stencil_attachment: None,
             });
             render_pass.set_pipeline(&self.pipeline);
-            render_pass.set_bind_group(0, &geometry_bind_group, &[]);
+            render_pass.set_bind_group(0, &input_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.draw(0..6, 0..1);
         }

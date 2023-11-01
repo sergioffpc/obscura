@@ -2,16 +2,10 @@
     return vec4<f32>(in_position, 0.0, 1.0);
 }
 
-@group(0) @binding(0) var g_buffer_position : texture_2d<f32>;
-@group(0) @binding(1) var g_buffer_normal   : texture_2d<f32>;
-@group(0) @binding(2) var g_buffer_albedo   : texture_2d<f32>;
-@group(0) @binding(3) var g_buffer_depth    : texture_depth_2d;
+@group(0) @binding(0) var l_buffer_color : texture_2d<f32>;
 
 @fragment fn fragment(@builtin(position) in_position : vec4<f32>) -> @location(0) vec4<f32> {
-    let position = textureLoad(g_buffer_position, vec2<i32>(floor(in_position.xy)), 0).xyz;
-    let normal = textureLoad(g_buffer_normal, vec2<i32>(floor(in_position.xy)), 0).xyz;
-    let albedo = textureLoad(g_buffer_albedo, vec2<i32>(floor(in_position.xy)), 0).rgb;
-    let depth = textureLoad(g_buffer_depth, vec2<i32>(floor(in_position.xy)), 0);
+    let color = textureLoad(l_buffer_color, vec2<i32>(floor(in_position.xy)), 0).rgb;
 
-    return vec4<f32>(albedo, 1.0);
+    return vec4<f32>(color, 1.0);
 }

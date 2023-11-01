@@ -42,9 +42,13 @@ impl Default for VertexAttribute {
 pub struct GeometryPass {
     pub output_bind_group_layout: Arc<wgpu::BindGroupLayout>,
     pub output_bind_group: Arc<wgpu::BindGroup>,
+
     model_matrix_buffer: wgpu::Buffer,
+    inv_model_matrix_buffer: wgpu::Buffer,
     view_matrix_buffer: wgpu::Buffer,
+    inv_view_matrix_buffer: wgpu::Buffer,
     projection_matrix_buffer: wgpu::Buffer,
+    inv_projection_matrix_buffer: wgpu::Buffer,
     transform_bind_group: Arc<wgpu::BindGroup>,
     render_targets: Vec<wgpu::TextureView>,
     depth_stencil_target: wgpu::TextureView,
@@ -54,9 +58,9 @@ pub struct GeometryPass {
 impl GeometryPass {
     const RENDER_TARGET_TEXTURE_FORMATS: [wgpu::TextureFormat; 3] = [
         // Position render target texture format..
-        wgpu::TextureFormat::Rgba16Float,
+        wgpu::TextureFormat::Rgba32Float,
         // Normal render target texture format.
-        wgpu::TextureFormat::Rgba16Float,
+        wgpu::TextureFormat::Rgba32Float,
         // Albedo render target texture format.
         wgpu::TextureFormat::Bgra8Unorm,
     ];
@@ -71,10 +75,26 @@ impl GeometryPass {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
+        let inv_model_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("geometry model inverse matrix buffer"),
+                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
         let view_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
             device,
             &wgpu::util::BufferInitDescriptor {
                 label: Some("geometry view matrix buffer"),
+                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+        let inv_view_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("geometry view inverse matrix buffer"),
                 contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
@@ -87,41 +107,30 @@ impl GeometryPass {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             },
         );
+        let inv_projection_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("geometry projection inverse matrix buffer"),
+                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
+        let transform_bind_group_layout_entries = (0..6)
+            .map(|index| wgpu::BindGroupLayoutEntry {
+                binding: index,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            })
+            .collect::<Vec<_>>();
         let transform_bind_group_layout = Arc::new(device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
                 label: Some("geometry transform bind group layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
+                entries: transform_bind_group_layout_entries.as_slice(),
             },
         ));
         let transform_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -134,11 +143,23 @@ impl GeometryPass {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: view_matrix_buffer.as_entire_binding(),
+                    resource: inv_model_matrix_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
+                    resource: view_matrix_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: inv_view_matrix_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: projection_matrix_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: inv_projection_matrix_buffer.as_entire_binding(),
                 },
             ],
         }));
@@ -295,8 +316,11 @@ impl GeometryPass {
             output_bind_group_layout,
             output_bind_group,
             model_matrix_buffer,
+            inv_model_matrix_buffer,
             view_matrix_buffer,
+            inv_view_matrix_buffer,
             projection_matrix_buffer,
+            inv_projection_matrix_buffer,
             transform_bind_group,
             render_targets,
             depth_stencil_target,
@@ -344,10 +368,22 @@ impl GeometryPass {
             0,
             bytemuck::cast_slice(projection_matrix.as_slice()),
         );
+        let inv_projection_matrix = projection_matrix.try_inverse().unwrap();
+        queue.write_buffer(
+            &self.inv_projection_matrix_buffer,
+            0,
+            bytemuck::cast_slice(inv_projection_matrix.as_slice()),
+        );
         queue.write_buffer(
             &self.view_matrix_buffer,
             0,
             bytemuck::cast_slice(view_matrix.as_slice()),
+        );
+        let inv_view_matrix = view_matrix.try_inverse().unwrap();
+        queue.write_buffer(
+            &self.inv_view_matrix_buffer,
+            0,
+            bytemuck::cast_slice(inv_view_matrix.as_slice()),
         );
         render_pass.set_bind_group(0, &self.transform_bind_group, &[]);
         geometries.iter().for_each(|(scene, transform_matrix)| {
@@ -364,6 +400,12 @@ impl GeometryPass {
                         &self.model_matrix_buffer,
                         0,
                         bytemuck::cast_slice(model_matrix.as_slice()),
+                    );
+                    let inv_model_matrix = model_matrix.try_inverse().unwrap();
+                    queue.write_buffer(
+                        &self.inv_model_matrix_buffer,
+                        0,
+                        bytemuck::cast_slice(inv_model_matrix.as_slice()),
                     );
                     mesh.primitives.iter().for_each(|primitive| {
                         render_pass.set_bind_group(1, &primitive.material.material_bind_group, &[]);

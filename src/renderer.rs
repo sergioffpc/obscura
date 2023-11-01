@@ -4,7 +4,7 @@ use nalgebra::Matrix4;
 use crate::{
     camera::{Projection, View},
     geometry::GeometryPass,
-    lighting::{Light, LightingPass},
+    lighting::{LightingPass, PointLight},
     present::PresentPass,
     scene::Scene,
 };
@@ -33,7 +33,7 @@ impl Renderer {
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
                 label: None,
-                features: wgpu::Features::empty(),
+                features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
                 limits: wgpu::Limits::default(),
             },
             None,
@@ -71,12 +71,13 @@ impl Renderer {
                 height: config.height,
                 depth_or_array_layers: 1,
             },
+            geometry_pass.output_bind_group_layout.clone(),
         );
         let present_pass = PresentPass::new(
             &device,
             surface,
             config,
-            geometry_pass.output_bind_group_layout.clone(),
+            lighting_pass.output_bind_group_layout.clone(),
         );
 
         Self {
@@ -93,7 +94,7 @@ impl Renderer {
 #[read_component(Projection)]
 #[read_component(View)]
 #[read_component(Scene)]
-#[read_component(Light)]
+#[read_component(PointLight)]
 #[read_component(Matrix4<f32>)]
 pub fn present(world: &mut SubWorld, #[resource] renderer: &mut Renderer) {
     let mut encoder = renderer
@@ -112,15 +113,18 @@ pub fn present(world: &mut SubWorld, #[resource] renderer: &mut Renderer) {
         view.as_matrix(),
         geometries,
     );
-    let lights = <(&Light, &Matrix4<f32>)>::query()
+    let lights = <(&PointLight, &Matrix4<f32>)>::query()
         .iter(world)
         .collect::<Vec<_>>();
-    renderer
-        .lighting_pass
-        .pass(&renderer.device, &renderer.queue, &mut encoder, lights);
+    renderer.lighting_pass.pass(
+        &renderer.device,
+        &mut encoder,
+        renderer.geometry_pass.output_bind_group.clone(),
+        lights,
+    );
     renderer.present_pass.pass(
         &renderer.queue,
         encoder,
-        renderer.geometry_pass.output_bind_group.clone(),
+        renderer.lighting_pass.output_bind_group.clone(),
     );
 }
