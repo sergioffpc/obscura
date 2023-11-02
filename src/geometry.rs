@@ -3,7 +3,10 @@ use std::sync::Arc;
 use nalgebra::Matrix4;
 use petgraph::visit::Dfs;
 
-use crate::scene::Scene;
+use crate::{
+    renderer::{RenderNode, RenderNodeBuilder},
+    scene::Scene,
+};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -40,81 +43,39 @@ impl Default for VertexAttribute {
 }
 
 pub struct GeometryPass {
-    pub output_bind_group_layout: Arc<wgpu::BindGroupLayout>,
-    pub output_bind_group: Arc<wgpu::BindGroup>,
-
-    model_matrix_buffer: wgpu::Buffer,
-    inv_model_matrix_buffer: wgpu::Buffer,
-    view_matrix_buffer: wgpu::Buffer,
-    inv_view_matrix_buffer: wgpu::Buffer,
-    projection_matrix_buffer: wgpu::Buffer,
-    inv_projection_matrix_buffer: wgpu::Buffer,
-    transform_bind_group: Arc<wgpu::BindGroup>,
-    render_targets: Vec<wgpu::TextureView>,
-    depth_stencil_target: wgpu::TextureView,
-    pipeline: wgpu::RenderPipeline,
+    pub render_node: RenderNode,
+    transform_buffers: Vec<wgpu::Buffer>,
+    transform_bind_group: wgpu::BindGroup,
 }
 
 impl GeometryPass {
-    const RENDER_TARGET_TEXTURE_FORMATS: [wgpu::TextureFormat; 3] = [
-        // Position render target texture format..
-        wgpu::TextureFormat::Rgba32Float,
-        // Normal render target texture format.
-        wgpu::TextureFormat::Rgba32Float,
-        // Albedo render target texture format.
-        wgpu::TextureFormat::Bgra8Unorm,
-    ];
-    const DEPTH_STENCIL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+    const GBUFFER_POSITION_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
+    const GBUFFER_NORMAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
+    const GBUFFER_ALBEDO_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
+    const GBUFFER_DEPTH_STENCIL_TEXTURE_FORMAT: wgpu::TextureFormat =
+        wgpu::TextureFormat::Depth24Plus;
+
+    const TRANSFORM_MODEL_MATRIX_IDX: usize = 0;
+    const TRANSFORM_MODEL_INV_MATRIX_IDX: usize = 1;
+    const TRANSFORM_VIEW_MATRIX_IDX: usize = 2;
+    const TRANSFORM_VIEW_INV_MATRIX_IDX: usize = 3;
+    const TRANSFORM_PROJECTION_MATRIX_IDX: usize = 4;
+    const TRANSFORM_PROJECTION_INV_MATRIX_IDX: usize = 5;
 
     pub fn new(device: &wgpu::Device, size: wgpu::Extent3d) -> Self {
-        let model_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry model matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let inv_model_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry model inverse matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let view_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry view matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let inv_view_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry view inverse matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let projection_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry projection matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
-        let inv_projection_matrix_buffer = wgpu::util::DeviceExt::create_buffer_init(
-            device,
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("geometry projection inverse matrix buffer"),
-                contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            },
-        );
+        let mut transform_buffers = vec![];
+        (0..6).for_each(|_| {
+            let buffer = wgpu::util::DeviceExt::create_buffer_init(
+                device,
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("transform"),
+                    contents: bytemuck::cast_slice(Matrix4::<f32>::identity().as_slice()),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                },
+            );
+            transform_buffers.push(buffer);
+        });
+
         let transform_bind_group_layout_entries = (0..6)
             .map(|index| wgpu::BindGroupLayoutEntry {
                 binding: index,
@@ -129,111 +90,23 @@ impl GeometryPass {
             .collect::<Vec<_>>();
         let transform_bind_group_layout = Arc::new(device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
-                label: Some("geometry transform bind group layout"),
+                label: Some("transform"),
                 entries: transform_bind_group_layout_entries.as_slice(),
             },
         ));
-        let transform_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("geometry transform bind group"),
+
+        let transform_bind_group_entries = (0..6)
+            .map(|index| wgpu::BindGroupEntry {
+                binding: index,
+                resource: transform_buffers[index as usize].as_entire_binding(),
+            })
+            .collect::<Vec<_>>();
+        let transform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("transform"),
             layout: &transform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_matrix_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: inv_model_matrix_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: view_matrix_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: inv_view_matrix_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: projection_matrix_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: inv_projection_matrix_buffer.as_entire_binding(),
-                },
-            ],
-        }));
-        let render_targets = Self::RENDER_TARGET_TEXTURE_FORMATS
-            .iter()
-            .map(|&format| {
-                let texture = device.create_texture(&wgpu::TextureDescriptor {
-                    label: None,
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                texture.create_view(&wgpu::TextureViewDescriptor::default())
-            })
-            .collect::<Vec<_>>();
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("geometry depth texture"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: GeometryPass::DEPTH_STENCIL_TEXTURE_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            entries: transform_bind_group_entries.as_slice(),
         });
-        let depth_stencil_target =
-            depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let output_bind_group_layout_entries = (0..render_targets.len())
-            .map(|index| wgpu::BindGroupLayoutEntry {
-                binding: index as u32,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            })
-            .chain(std::iter::once(wgpu::BindGroupLayoutEntry {
-                binding: render_targets.len() as u32,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            }))
-            .collect::<Vec<_>>();
-        let output_bind_group_layout = Arc::new(device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-                label: Some("geometry output bind group layout"),
-                entries: output_bind_group_layout_entries.as_slice(),
-            },
-        ));
-        let output_bind_group_entries = render_targets
-            .iter()
-            .chain(std::iter::once(&depth_stencil_target))
-            .enumerate()
-            .map(|(i, texture_view)| wgpu::BindGroupEntry {
-                binding: i as u32,
-                resource: wgpu::BindingResource::TextureView(texture_view),
-            })
-            .collect::<Vec<_>>();
-        let output_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("geometry output bind group"),
-            layout: &output_bind_group_layout,
-            entries: output_bind_group_entries.as_slice(),
-        }));
+
         let material_bind_group_layout_entries = (0..5)
             .flat_map(|i| {
                 [
@@ -258,73 +131,26 @@ impl GeometryPass {
             .collect::<Vec<_>>();
         let material_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("geometry bind group layout"),
+                label: Some("material"),
                 entries: material_bind_group_layout_entries.as_slice(),
             });
-        let shader = device.create_shader_module(wgpu::include_wgsl!("geometry.wgsl"));
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("geometry render pipeline layout"),
-            bind_group_layouts: &[&transform_bind_group_layout, &material_bind_group_layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("geometry render pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vertex",
-                buffers: &[VertexAttribute::desc()],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                unclipped_depth: false,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: GeometryPass::DEPTH_STENCIL_TEXTURE_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fragment",
-                targets: Self::RENDER_TARGET_TEXTURE_FORMATS
-                    .map(|format| {
-                        Some(wgpu::ColorTargetState {
-                            format,
-                            blend: Some(wgpu::BlendState::REPLACE),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })
-                    })
-                    .as_slice(),
-            }),
-            multiview: None,
-        });
+
+        let render_node = RenderNodeBuilder::default()
+            .with_name("geometry")
+            .with_color_attachment_format(Self::GBUFFER_POSITION_TEXTURE_FORMAT)
+            .with_color_attachment_format(Self::GBUFFER_NORMAL_TEXTURE_FORMAT)
+            .with_color_attachment_format(Self::GBUFFER_ALBEDO_TEXTURE_FORMAT)
+            .with_depth_stencil_format(Self::GBUFFER_DEPTH_STENCIL_TEXTURE_FORMAT)
+            .with_shader_source(include_str!("geometry.wgsl").into())
+            .with_bind_group_layout(&transform_bind_group_layout)
+            .with_bind_group_layout(&material_bind_group_layout)
+            .with_vertex_buffer_layout(VertexAttribute::desc())
+            .build(&device, size);
 
         Self {
-            output_bind_group_layout,
-            output_bind_group,
-            model_matrix_buffer,
-            inv_model_matrix_buffer,
-            view_matrix_buffer,
-            inv_view_matrix_buffer,
-            projection_matrix_buffer,
-            inv_projection_matrix_buffer,
+            render_node,
+            transform_buffers,
             transform_bind_group,
-            render_targets,
-            depth_stencil_target,
-            pipeline,
         }
     }
 
@@ -336,55 +162,29 @@ impl GeometryPass {
         view_matrix: Matrix4<f32>,
         geometries: Vec<(&Scene, &Matrix4<f32>)>,
     ) {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("geometry render pass"),
-            color_attachments: self
-                .render_targets
-                .iter()
-                .map(|target| {
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: target,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
-                            store: true,
-                        },
-                    })
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_stencil_target,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
-                }),
-                stencil_ops: None,
-            }),
+        let mut render_pass = self.render_node.begin_render_pass(encoder);
+
+        [
+            (Self::TRANSFORM_PROJECTION_MATRIX_IDX, projection_matrix),
+            (
+                Self::TRANSFORM_PROJECTION_INV_MATRIX_IDX,
+                projection_matrix.try_inverse().unwrap(),
+            ),
+            (Self::TRANSFORM_VIEW_MATRIX_IDX, view_matrix),
+            (
+                Self::TRANSFORM_VIEW_INV_MATRIX_IDX,
+                view_matrix.try_inverse().unwrap(),
+            ),
+        ]
+        .iter()
+        .for_each(|(index, matrix)| {
+            queue.write_buffer(
+                &self.transform_buffers[*index],
+                0,
+                bytemuck::cast_slice(matrix.as_slice()),
+            )
         });
-        render_pass.set_pipeline(&self.pipeline);
-        queue.write_buffer(
-            &self.projection_matrix_buffer,
-            0,
-            bytemuck::cast_slice(projection_matrix.as_slice()),
-        );
-        let inv_projection_matrix = projection_matrix.try_inverse().unwrap();
-        queue.write_buffer(
-            &self.inv_projection_matrix_buffer,
-            0,
-            bytemuck::cast_slice(inv_projection_matrix.as_slice()),
-        );
-        queue.write_buffer(
-            &self.view_matrix_buffer,
-            0,
-            bytemuck::cast_slice(view_matrix.as_slice()),
-        );
-        let inv_view_matrix = view_matrix.try_inverse().unwrap();
-        queue.write_buffer(
-            &self.inv_view_matrix_buffer,
-            0,
-            bytemuck::cast_slice(inv_view_matrix.as_slice()),
-        );
+
         render_pass.set_bind_group(0, &self.transform_bind_group, &[]);
         geometries.iter().for_each(|(scene, transform_matrix)| {
             let mut dfs = Dfs::new(scene, petgraph::graph::node_index(0));
@@ -397,13 +197,13 @@ impl GeometryPass {
                         })
                         * *transform_matrix;
                     queue.write_buffer(
-                        &self.model_matrix_buffer,
+                        &self.transform_buffers[Self::TRANSFORM_MODEL_MATRIX_IDX],
                         0,
                         bytemuck::cast_slice(model_matrix.as_slice()),
                     );
                     let inv_model_matrix = model_matrix.try_inverse().unwrap();
                     queue.write_buffer(
-                        &self.inv_model_matrix_buffer,
+                        &self.transform_buffers[Self::TRANSFORM_MODEL_INV_MATRIX_IDX],
                         0,
                         bytemuck::cast_slice(inv_model_matrix.as_slice()),
                     );
