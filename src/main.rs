@@ -63,18 +63,18 @@ fn main() {
     let camera = Projection::new(window.inner_size().width, window.inner_size().height);
     entity_world.push((camera, View::default()));
 
-    let geometry = scene::import(&renderer.device, &renderer.queue, "res/suzanne.glb");
+    let geometry = scene::import(&renderer.device, &renderer.queue, "res/BoxVertexColors.glb");
     entity_world.push((
         geometry,
-        Translation3::<f32>::new(0.0, 0.0, -5.0).to_homogeneous(),
+        Translation3::<f32>::new(-5.0, 0.0, -5.0).to_homogeneous(),
     ));
 
     let light = PointLight {
-        intensity: [0.1, 0.0, 0.0, 0.0],
+        color: [100000.0, 0.0, 0.0, 0.0],
     };
     entity_world.push((
         light,
-        Translation3::<f32>::new(2.0, 2.0, 0.0).to_homogeneous(),
+        Translation3::<f32>::new(0.0, 0.0, 10.0).to_homogeneous(),
     ));
 
     shared_resources.insert(renderer);

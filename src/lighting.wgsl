@@ -9,27 +9,33 @@
 
 @group(1) @binding(0) var<uniform> light_count : u32;
 struct LightSource {
-    position  : vec4<f32>,
-    intensity : vec4<f32>,
+    position : vec4<f32>,
+    color    : vec4<f32>,
 }
 @group(1) @binding(1) var<storage, read> lights: array<LightSource>;
 
-struct FragmentOutput {
-    @location(0) color : vec4<f32>,
-}
-
-@fragment fn fragment(@builtin(position) in_position : vec4<f32>) -> FragmentOutput {
+@fragment fn fragment(@builtin(position) in_position : vec4<f32>) -> @location(0) vec4<f32> {
     let position = textureLoad(g_buffer_position, vec2<i32>(floor(in_position.xy)), 0).xyz;
     let normal = textureLoad(g_buffer_normal, vec2<i32>(floor(in_position.xy)), 0).xyz;
     let albedo = textureLoad(g_buffer_albedo, vec2<i32>(floor(in_position.xy)), 0).rgb;
     let depth = textureLoad(g_buffer_depth, vec2<i32>(floor(in_position.xy)), 0);
 
-    var out : FragmentOutput;
-    if depth < 1.0 {
-        out.color = vec4(albedo, 1.0) * 0.01;
-        for (var i = 0u; i < light_count; i++) {
-            out.color += lights[i].intensity;
-        }
+    if depth >= 1.0 {
+        return vec4<f32>(albedo, 0.0);
     }
-    return out;
+
+    let N = normalize(normal);
+
+    var surface_color = vec3<f32>(0.0, 0.0, 0.0);
+    for (var i = 0u; i < light_count; i++) {
+        let world_to_light = lights[i].position.xyz - position;
+        let dist = length(world_to_light);
+        let wi = normalize(world_to_light);
+
+        let radiance = lights[i].color.rgb * (1.0 / pow(dist, 2.0));
+        let n_dot_l = max(dot(N, wi), 0.0);
+
+        surface_color += albedo * radiance * n_dot_l;
+    }
+    return vec4<f32>(surface_color, 1.0);
 }

@@ -3,14 +3,14 @@ use nalgebra::Matrix4;
 use crate::renderer::{RenderNode, RenderNodeBuilder};
 
 pub struct PointLight {
-    pub intensity: [f32; 4],
+    pub color: [f32; 4],
 }
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct LightSource {
     position: [f32; 4],
-    intensity: [f32; 4],
+    color: [f32; 4],
 }
 
 pub struct LightingPass {
@@ -115,7 +115,7 @@ impl LightingPass {
             .iter()
             .map(|(light, transform_matrix)| LightSource {
                 position: transform_matrix.column(3).into(),
-                intensity: light.intensity,
+                color: light.color,
             })
             .collect::<Vec<_>>();
         let lights_buffer = wgpu::util::DeviceExt::create_buffer_init(
